@@ -149,7 +149,7 @@ router.delete('/:reelId/comments/:commentId', verifyToken, async(req, res) => {
                 .status(403)
                 .json({ message: "You're not allowed to edit this comment" });
         }
-            reel.comments.remove({ _id: req.params.commentId });
+            reel.comments.pull({ _id: req.params.commentId });
             await reel.save();
             res.status(200).json({ message: "Comment deleted successfully" });
     } catch (err) {
