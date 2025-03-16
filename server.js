@@ -10,7 +10,7 @@ const logger = require('morgan');
 // Import routers
 const authRouter = require('./controllers/auth');
 const testJwtRouter = require('./controllers/test-jwt');
-const reelsRouter = require('./controllers/reel.js');
+const reelsRouter = require('./controllers/reels.js');
 const usersRouter = require('./controllers/users');
 
 
