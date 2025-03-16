@@ -22,21 +22,20 @@ const commentSchema = new mongoose.Schema(
 
 const reelSchema = new mongoose.Schema(
     {
-    title: {
-        type: String,
-        required: true,
-    },
-    description: {
-        type: String,
-        required: true,
-    },
-    text: {
-        type: String,
-        required: true,
-    },
-    author: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    comments: [commentSchema],
-
+        title: { 
+            type: String, 
+            required: true 
+        },
+        text: { 
+            type: String, 
+            required: true },
+        author: { 
+            type: mongoose.Schema.Types.ObjectId, 
+            ref: "User" },
+        likes: [{ 
+            type: mongoose.Schema.Types.ObjectId, 
+            ref: "User" }], // Store user IDs who liked the reel
+        comments: [commentSchema],
     },
     { timestamps: true }
 );
