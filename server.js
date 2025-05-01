@@ -1,4 +1,4 @@
-// npm
+
 const dotenv = require('dotenv');
 dotenv.config();
 const express = require('express');
@@ -10,9 +10,8 @@ const logger = require('morgan');
 // Import routers
 const authRouter = require('./controllers/auth');
 const testJwtRouter = require('./controllers/test-jwt');
-const reelsRouter = require('./controllers/reels.js');
 const usersRouter = require('./controllers/users');
-
+const reelsRouter = require('./controllers/reels');
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI);
@@ -29,11 +28,10 @@ app.use(logger('dev'));
 // Routes
 app.use('/auth', authRouter);
 app.use('/test-jwt', testJwtRouter);
-app.use('/reelTalk', reelsRouter);
 app.use('/users', usersRouter);
+app.use('/reelTalk', reelsRouter);
 
-
-// Start the server and listen on port 3540
+// Start the server and listen on port 3570
 app.listen(3570, () => {
   console.log('The express app is ready!');
 });

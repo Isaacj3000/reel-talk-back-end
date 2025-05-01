@@ -1,56 +1,98 @@
 const express = require('express');
 const verifyToken = require('../middleware/verify-token');
 const Reel = require('../models/reel');
+
 const router = express.Router();
 
-router.post('/', verifyToken, async(req, res) => {
+router.get('/trending', verifyToken, async (req, res) => {
+    try {
+        console.log("Fetching trending reels...");
+
+        const trendingReels = await Reel.find({})
+            .populate("author", "username")
+            .populate("comments.author", "username")
+            .lean();
+
+        // Sort reels by engagement (likes & comments) with null checks
+        trendingReels.sort((a, b) => {
+            const aLikes = Array.isArray(a.likes) ? a.likes.length : 0;
+            const bLikes = Array.isArray(b.likes) ? b.likes.length : 0;
+            const aComments = Array.isArray(a.comments) ? a.comments.length : 0;
+            const bComments = Array.isArray(b.comments) ? b.comments.length : 0;
+            
+            return (bLikes + bComments) - (aLikes + aComments);
+        });
+
+        // Return only top 10 trending reels
+        const topTrending = trendingReels.slice(0, 10);
+
+        res.status(200).json(topTrending);
+    } catch (err) {
+        console.error("Error Fetching Trending Reels:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/', verifyToken, async (req, res) => {
     try {
         req.body.author = req.user._id;
         const reel = await Reel.create(req.body);
-        reel._doc.author = req.user;
-        res.status(201).json({ reel });
-    } catch (err) {
-        res.status(500).json({ err: err.message });
-    }
-});
-router.post('/:reelId/comments', verifyToken, async(req, res) => {
-    try {
-        req.body.author = req.user._id;
-        const reel = await Reel.findById(req.params.reelId);
-        reel.comments.push(req.body);
-        await reel.save();
+        await reel.populate("author", "username");  
 
-        const newComment = reel.comments[reel.comments.length - 1];
-
-        newComment._doc.author = req.user;
-        res.status(201).json(newComment);
-    } catch (err) {
-        res.status(500).json({ err: err.message });
-    }
-});
-router.post('/:reelId/comments/:commentId/like', verifyToken, async (req, res) => {
-    try {
-        const reel = await Reel.findById(req.params.reelId);
-        if (!reel) return res.status(404).json({ error: "Reel not found" });
-
-        const comment = reel.comments.id(req.params.commentId);
-        if (!comment) return res.status(404).json({ error: "Comment not found" });
-
-        const userId = req.user._id;
-        const likeIndex = comment.likes.indexOf(userId);
-
-        if (likeIndex === -1) {
-            comment.likes.push(userId);  // ✅ Like the comment
-        } else {
-            comment.likes.splice(likeIndex, 1);  // ✅ Unlike the comment
-        }
-
-        await reel.save();
-        res.status(200).json({ likes: comment.likes.length });
+        res.status(201).json(reel);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
+
+router.post('/:reelId/comments', verifyToken, async (req, res) => {
+    try {
+        req.body.author = req.user._id;
+        const reel = await Reel.findById(req.params.reelId);
+        if (!reel) return res.status(404).json({ error: "Reel not found" });
+
+        reel.comments.push(req.body);
+        await reel.save();
+
+        // Get the updated reel with populated comment authors
+        const updatedReel = await Reel.findById(req.params.reelId)
+            .populate('comments.author', 'username');
+        
+        // Get the last comment (the one we just added)
+        const newComment = updatedReel.comments[updatedReel.comments.length - 1];
+
+        res.status(201).json(newComment);
+    } catch (err) {
+        console.error("Error creating comment:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.get('/', verifyToken, async (req, res) => {
+    try {
+        const reels = await Reel.find({})
+            .populate("author", "username")
+            .sort({ createdAt: "desc" });
+
+        res.status(200).json(reels);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+router.get('/:reelId', verifyToken, async (req, res) => {
+    try {
+        const reel = await Reel.findById(req.params.reelId)
+            .populate("author", "username")
+            .populate("comments.author", "username");
+
+        if (!reel) return res.status(404).json({ error: "Reel not found" });
+
+        res.status(200).json(reel);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 router.post('/:reelId/like', verifyToken, async (req, res) => {
     try {
         const reel = await Reel.findById(req.params.reelId);
@@ -60,144 +102,132 @@ router.post('/:reelId/like', verifyToken, async (req, res) => {
         const likeIndex = reel.likes.indexOf(userId);
 
         if (likeIndex === -1) {
-            reel.likes.push(userId);  // ✅ Like the reel
+            reel.likes.push(userId);
         } else {
-            reel.likes.splice(likeIndex, 1);  // ✅ Unlike the reel
+            reel.likes.splice(likeIndex, 1);
         }
 
         await reel.save();
-        res.status(200).json({ likes: reel.likes.length });
+        res.status(200).json(reel);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-router.get('/', verifyToken, async(req, res) => {
+router.post('/:reelId/comments/:commentId/like', verifyToken, async (req, res) => {
     try {
-        const reels = await Reel.find({})
-        .populate("author")
-        .sort({ createdAt: "desc" });
-        res.status(200).json(reels);
+      const reel = await Reel.findById(req.params.reelId);
+      if (!reel) return res.status(404).json({ error: "Reel not found" });
+  
+      const comment = reel.comments.id(req.params.commentId);
+      if (!comment) return res.status(404).json({ error: "Comment not found" });
+  
+      const userId = req.user._id.toString();
+      const hasLiked = comment.likes.includes(userId);
+  
+      if (hasLiked) {
+        // Unlike the comment
+        comment.likes.pull(userId);
+      } else {
+        // Like the comment
+        comment.likes.push(userId);
+      }
+  
+      await reel.save();
+  
+      res.status(200).json({
+        message: hasLiked ? "Comment unliked" : "Comment liked",
+        likes: comment.likes.length,
+        commentId: comment._id,
+      });
     } catch (err) {
-        res.status(500).json({ err: err.message });
+      console.error("Error liking comment:", err);
+      res.status(500).json({ error: "Internal server error" });
     }
-});
+  });
+  
 
-router.get('/:reelId', verifyToken, async(req, res) => {
-    try {
-        // populate authore of hoot and comments
-        const reel = await Reel.findById(req.params.reelId).populate([
-            "author",
-            "comments.author",
-        ]);
-        res.status(200).json(reel);
-    } catch (err) {
-        res.status(500).json({ err: err.message });
-    }
-});
-
-// router.put('/:reelId', verifyToken, async(req, res) => {
-//     try {
-//         //Find the reel
-//         const reel = await Reel.findByIdAndUpdate(req.params.reelId);
-
-//         //check permissions
-//         if (!reel.author.equals(req.user._id)) {
-//             return res.status(403).json({ err: "You're not allowed to update this reel" });
-//         }
-
-//         //Update the reel
-//         const updatedReel = await Reel.findByIdAndUpdate(
-//             req.params.reelId,
-//             req.body,
-//             { new: true }
-//         );
-
-//         // Append req.user to the author property:
-//         updatedReel._doc.author = req.user;
-
-//         // Issue JSON response
-//         res.status(200).json(updatedReel);
-//     } catch (err) {
-//         res.status(500).json({ err: err.message });
-//     }
 router.put('/:reelId', verifyToken, async (req, res) => {
     try {
-        // Find the reel first
         const reel = await Reel.findById(req.params.reelId);
+        if (!reel) return res.status(404).json({ error: "Reel not found" });
 
-        if (!reel) return res.status(404).json({ err: "Reel not found" });
-
-        //Check if the user is the owner
         if (!reel.author.equals(req.user._id)) {
-            return res.status(403).json({ err: "You're not allowed to update this reel" });
+            return res.status(403).json({ error: "You're not allowed to update this reel" });
         }
 
-        //Update the reel (only if user is authorized)
         const updatedReel = await Reel.findByIdAndUpdate(
             req.params.reelId,
             req.body,
             { new: true }
-        ).populate("author"); // ✅ Populating author for response
-
-        updatedReel._doc.author = req.user; // ✅ Attach user details manually
+        ).populate("author", "username"); // Keep author populated
 
         res.status(200).json(updatedReel);
     } catch (err) {
-        res.status(500).json({ err: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
-router.put('/:reelId/comments/:commentId', verifyToken, async(req, res) => {
-    try {
-     const reel = await Reel.findById(req.params.reelId);
-     const comment = reel.comments.id(req.params.commentId);
 
-     // ensures the current user is the author of the comment
-        if (comment.author.toString() !== req.user._id) {
-            return res
-                .status(403)
-                .json({ message: "You're not allowed to update this comment" });
+router.put('/:reelId/comments/:commentId', verifyToken, async (req, res) => {
+    try {
+        const reel = await Reel.findById(req.params.reelId);
+        if (!reel) return res.status(404).json({ error: "Reel not found" });
+
+        const comment = reel.comments.id(req.params.commentId);
+        if (!comment) return res.status(404).json({ error: "Comment not found" });
+
+        if (!comment.author.equals(req.user._id)) {
+            return res.status(403).json({ error: "You're not allowed to update this comment" });
         }
 
         comment.text = req.body.text;
         await reel.save();
-        res.status(200).json({ message: "Comment updated successfully" });
+
+        // Populate updated comment author
+        await reel.populate("comments.author", "username");
+
+        res.status(200).json({ message: "Comment updated successfully", comment });
     } catch (err) {
-        res.status(500).json({ err: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
 
-router.delete('/:reelId', verifyToken, async(req, res) => {
+/* ==============================
+DELETE ROUTES (Deleting Reels & Comments)
+================================ */
+router.delete('/:reelId', verifyToken, async (req, res) => {
     try {
         const reel = await Reel.findById(req.params.reelId);
+        if (!reel) return res.status(404).json({ error: "Reel not found" });
 
         if (!reel.author.equals(req.user._id)) {
-            return res.status(403).json({ err: "You're not allowed to delete this reel" });
+            return res.status(403).json({ error: "You're not allowed to delete this reel" });
         }
-        // Delete the reel
-        const deletedReel = await Reel.findByIdAndDelete(req.params.reelId);
-        res.status(200).json(deletedReel);
+
+        await Reel.findByIdAndDelete(req.params.reelId);
+        res.status(200).json({ message: "Reel deleted successfully" });
     } catch (err) {
-        res.status(500).json({ err: err.message });
+        res.status(500).json({ error: err.message });
     }
 });
-router.delete('/:reelId/comments/:commentId', verifyToken, async(req, res) => {
+
+router.delete('/:reelId/comments/:commentId', verifyToken, async (req, res) => {
     try {
         const reel = await Reel.findById(req.params.reelId);
-        const comment = reel.comments.id(req.params.commentId);
+        if (!reel) return res.status(404).json({ error: "Reel not found" });
 
-        // ensures the current user is the author of the comment 
-        if (comment.author.toString() !== req.user._id) {
-            return res
-                .status(403)
-                .json({ message: "You're not allowed to edit this comment" });
+        const comment = reel.comments.id(req.params.commentId);
+        if (!comment) return res.status(404).json({ error: "Comment not found" });
+
+        if (!comment.author.equals(req.user._id)) {
+            return res.status(403).json({ error: "You're not allowed to delete this comment" });
         }
-            reel.comments.pull({ _id: req.params.commentId });
-            await reel.save();
-            res.status(200).json({ message: "Comment deleted successfully" });
+
+        reel.comments.pull({ _id: req.params.commentId });
+        await reel.save();
+        res.status(200).json({ message: "Comment deleted successfully" });
     } catch (err) {
-        res.status(500).json({ err: err.message });
-        
+        res.status(500).json({ error: err.message });
     }
 });
 
