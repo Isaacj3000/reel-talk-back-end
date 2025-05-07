@@ -1,6 +1,7 @@
 const express = require('express');
 const verifyToken = require('../middleware/verify-token');
 const Reel = require('../models/reel');
+const mongoose = require('mongoose');
 
 const router = express.Router();
 
@@ -197,16 +198,71 @@ DELETE ROUTES (Deleting Reels & Comments)
 ================================ */
 router.delete('/:reelId', verifyToken, async (req, res) => {
     try {
-        const reel = await Reel.findById(req.params.reelId);
-        if (!reel) return res.status(404).json({ error: "Reel not found" });
+        console.log('\n=== Delete Reel Request ===');
+        console.log('Request params:', req.params);
+        console.log('Request headers:', {
+            authorization: req.headers.authorization ? 'Bearer [HIDDEN]' : 'none',
+            'content-type': req.headers['content-type']
+        });
+        console.log('User from token:', {
+            id: req.user._id,
+            username: req.user.username
+        });
 
-        if (!reel.author.equals(req.user._id)) {
+        // Validate MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(req.params.reelId)) {
+            console.log(' Invalid MongoDB ObjectId:', req.params.reelId);
+            return res.status(400).json({ error: "Invalid reel ID format" });
+        }
+
+        console.log('🔍 Finding reel with ID:', req.params.reelId);
+        const reel = await Reel.findById(req.params.reelId);
+        
+        if (!reel) {
+            console.log(' Reel not found in database');
+            return res.status(404).json({ error: "Reel not found" });
+        }
+
+        console.log(' Found reel:', {
+            id: reel._id,
+            author: reel.author,
+            title: reel.title
+        });
+
+        // Convert both to strings for comparison
+        const reelAuthorId = reel.author.toString();
+        const userId = req.user._id.toString();
+        
+        console.log('🔒 Comparing IDs:', {
+            reelAuthorId,
+            userId,
+            match: reelAuthorId === userId
+        });
+
+        if (reelAuthorId !== userId) {
+            console.log('Authorization failed - user is not the author');
             return res.status(403).json({ error: "You're not allowed to delete this reel" });
         }
 
-        await Reel.findByIdAndDelete(req.params.reelId);
-        res.status(200).json({ message: "Reel deleted successfully" });
+        try {
+            console.log(' Attempting to delete reel...');
+            const deletedReel = await Reel.findByIdAndDelete(req.params.reelId);
+            
+            if (!deletedReel) {
+                console.log(' Delete operation failed - no document found');
+                return res.status(500).json({ error: "Failed to delete reel" });
+            }
+
+            console.log('Reel deleted successfully');
+            res.status(200).json({ message: "Reel deleted successfully" });
+        } catch (deleteError) {
+            console.error(' MongoDB delete error:', deleteError);
+            console.error('Error stack:', deleteError.stack);
+            res.status(500).json({ error: "Database error while deleting reel" });
+        }
     } catch (err) {
+        console.error(' Error in delete route:', err);
+        console.error('Error stack:', err.stack);
         res.status(500).json({ error: err.message });
     }
 });
@@ -227,6 +283,39 @@ router.delete('/:reelId/comments/:commentId', verifyToken, async (req, res) => {
         await reel.save();
         res.status(200).json({ message: "Comment deleted successfully" });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/* ==============================
+DELETE ALL ROUTE (Admin only)
+================================ */
+router.delete('/admin/delete-all', verifyToken, async (req, res) => {
+    try {
+        console.log('\n=== Delete All Reels Request ===');
+        console.log('Requested by user:', {
+            id: req.user._id,
+            username: req.user.username
+        });
+
+        // Add a safety check - you can modify this condition based on your needs
+        if (req.user.username !== 'ZAzou') {
+            console.log('Unauthorized attempt to delete all reels');
+            return res.status(403).json({ error: "You're not authorized to perform this action" });
+        }
+
+        const result = await Reel.deleteMany({});
+        console.log('Delete operation result:', {
+            deletedCount: result.deletedCount
+        });
+
+        res.status(200).json({ 
+            message: "All reels deleted successfully",
+            deletedCount: result.deletedCount
+        });
+    } catch (err) {
+        console.error('Error deleting all reels:', err);
+        console.error('Error stack:', err.stack);
         res.status(500).json({ error: err.message });
     }
 });
