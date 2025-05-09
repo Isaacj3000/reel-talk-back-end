@@ -1,4 +1,3 @@
-
 const dotenv = require('dotenv');
 dotenv.config();
 const express = require('express');
@@ -32,6 +31,7 @@ app.use('/users', usersRouter);
 app.use('/reelTalk', reelsRouter);
 
 // Start the server and listen on port 3570
-app.listen(3570, () => {
-  console.log('The express app is ready!');
+const PORT = process.env.PORT || 3570;
+app.listen(PORT, () => {
+  console.log(`The express app is ready on port ${PORT}!`);
 });
